@@ -5,13 +5,13 @@ pkgver=0
 pkgrel=1
 pkgdesc="Bluetooth management toolkit daemon and CLI"
 arch=('x86_64' 'aarch64')
-url="https://github.com/peared/peared"
+url="https://github.com/ttpears/peared"
 license=('GPL3')
 depends=('bluez' 'dbus')
 makedepends=('go' 'git')
 provides=('peared')
 conflicts=('peared')
-source=("git+https://github.com/peared/peared.git")
+source=("git+https://github.com/ttpears/peared.git")
 sha256sums=('SKIP')
 
 pkgver() {
