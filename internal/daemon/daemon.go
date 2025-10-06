@@ -45,26 +45,26 @@ type Daemon struct {
 
 // New constructs a Daemon from the provided options.
 func New(opts Options) (*Daemon, error) {
-        logger := opts.Logger
-        if logger == nil {
-                logger = slog.Default()
-                if logger == nil {
-                        logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-                }
-        }
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+		if logger == nil {
+			logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+		}
+	}
 
-        provider := opts.AdapterProvider
-        if provider == nil {
-                provider = DefaultAdapterProvider()
-        }
+	provider := opts.AdapterProvider
+	if provider == nil {
+		provider = DefaultAdapterProvider()
+	}
 
-        return &Daemon{
-                preferredAdapter: opts.PreferredAdapter,
-                log:              logger,
-                configSource:     opts.ConfigSource,
-                configLoaded:     opts.ConfigLoaded,
-                adapterProv:      provider,
-        }, nil
+	return &Daemon{
+		preferredAdapter: opts.PreferredAdapter,
+		log:              logger,
+		configSource:     opts.ConfigSource,
+		configLoaded:     opts.ConfigLoaded,
+		adapterProv:      provider,
+	}, nil
 }
 
 // Run starts the daemon loop and blocks until the context is cancelled or an
@@ -127,25 +127,18 @@ func (d *Daemon) refreshAdapters(ctx context.Context) error {
 		return errors.New("no adapters discovered")
 	}
 
-	var chosen Adapter
-	if d.preferredAdapter != "" {
-		for _, adapter := range adapters {
-			if adapter.Matches(d.preferredAdapter) {
-				chosen = adapter
-				goto setAdapter
-			}
-		}
+	chosen, err := SelectAdapter(d.preferredAdapter, adapters)
+	if err != nil {
+		return err
 	}
 
-	chosen = adapters[0]
-
-setAdapter:
 	d.mu.Lock()
 	d.activeAdapter = &Adapter{
-		ID:      chosen.ID,
-		Address: chosen.Address,
-		Alias:   chosen.Alias,
-		Powered: chosen.Powered,
+		ID:        chosen.ID,
+		Address:   chosen.Address,
+		Alias:     chosen.Alias,
+		Powered:   chosen.Powered,
+		Transport: chosen.Transport,
 	}
 	d.mu.Unlock()
 

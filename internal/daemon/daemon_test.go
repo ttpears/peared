@@ -210,3 +210,41 @@ func TestRunFallsBackToFirstAdapter(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestSelectAdapterHonoursPreference(t *testing.T) {
+	adapters := []Adapter{
+		{ID: "hci0", Transport: AdapterTransportUSB},
+		{ID: "hci1", Transport: AdapterTransportUSB},
+	}
+
+	adapter, err := SelectAdapter("hci1", adapters)
+	if err != nil {
+		t.Fatalf("SelectAdapter returned error: %v", err)
+	}
+
+	if adapter.ID != "hci1" {
+		t.Fatalf("expected hci1, got %s", adapter.ID)
+	}
+}
+
+func TestSelectAdapterPrefersUSB(t *testing.T) {
+	adapters := []Adapter{
+		{ID: "hci0", Transport: AdapterTransportPCI},
+		{ID: "hci1", Transport: AdapterTransportUSB},
+	}
+
+	adapter, err := SelectAdapter("", adapters)
+	if err != nil {
+		t.Fatalf("SelectAdapter returned error: %v", err)
+	}
+
+	if adapter.ID != "hci1" {
+		t.Fatalf("expected usb adapter hci1, got %s", adapter.ID)
+	}
+}
+
+func TestSelectAdapterErrorsOnEmpty(t *testing.T) {
+	if _, err := SelectAdapter("", nil); err == nil {
+		t.Fatal("expected error when adapters are empty")
+	}
+}

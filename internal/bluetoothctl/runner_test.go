@@ -164,3 +164,35 @@ func TestNewRunnerRequiresSudoWhenNonRoot(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestRunnerExecIncludesAdapter(t *testing.T) {
+	ctx := context.Background()
+	var gotArgs []string
+	runner, err := NewRunner(
+		WithBinary("bluetoothctl"),
+		WithUseSudo(false),
+		WithAdapter("hci1"),
+		WithCommandRunner(func(_ context.Context, name string, args ...string) ([]byte, error) {
+			gotArgs = append([]string(nil), args...)
+			if name != "bluetoothctl" {
+				t.Fatalf("unexpected executable %q", name)
+			}
+			return []byte("ok"), nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewRunner returned error: %v", err)
+	}
+
+	if _, err := runner.Scan(ctx, time.Second); err != nil {
+		t.Fatalf("Scan returned error: %v", err)
+	}
+
+	if len(gotArgs) < 4 {
+		t.Fatalf("expected adapter flag and scan args, got %v", gotArgs)
+	}
+
+	if gotArgs[0] != "--adapter" || gotArgs[1] != "hci1" {
+		t.Fatalf("expected adapter flag first, got %v", gotArgs)
+	}
+}

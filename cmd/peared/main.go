@@ -15,6 +15,7 @@ import (
 
 	"github.com/peared/peared/internal/bluetoothctl"
 	"github.com/peared/peared/internal/cli"
+	"github.com/peared/peared/internal/config"
 	"github.com/peared/peared/internal/daemon"
 )
 
@@ -159,12 +160,14 @@ func scanDevices(args []string) {
 	flagSet := flag.NewFlagSet("devices scan", flag.ExitOnError)
 	duration := flagSet.Duration("duration", 15*time.Second, "Duration to scan for devices")
 	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	adapter := flagSet.String("adapter", "", "Adapter identifier (ID, address, or alias) to target")
+	configPath := flagSet.String("config", "", "Path to configuration file (defaults to XDG config directory)")
 	if err := flagSet.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
 		os.Exit(2)
 	}
 
-	runner, err := newBluetoothRunner(*noSudo)
+	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
@@ -184,6 +187,8 @@ func scanDevices(args []string) {
 func pairDevice(args []string) {
 	flagSet := flag.NewFlagSet("devices pair", flag.ExitOnError)
 	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	adapter := flagSet.String("adapter", "", "Adapter identifier (ID, address, or alias) to target")
+	configPath := flagSet.String("config", "", "Path to configuration file (defaults to XDG config directory)")
 	if err := flagSet.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
 		os.Exit(2)
@@ -195,7 +200,7 @@ func pairDevice(args []string) {
 	}
 
 	address := flagSet.Arg(0)
-	runner, err := newBluetoothRunner(*noSudo)
+	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
@@ -215,6 +220,8 @@ func pairDevice(args []string) {
 func connectDevice(args []string) {
 	flagSet := flag.NewFlagSet("devices connect", flag.ExitOnError)
 	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	adapter := flagSet.String("adapter", "", "Adapter identifier (ID, address, or alias) to target")
+	configPath := flagSet.String("config", "", "Path to configuration file (defaults to XDG config directory)")
 	if err := flagSet.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
 		os.Exit(2)
@@ -226,7 +233,7 @@ func connectDevice(args []string) {
 	}
 
 	address := flagSet.Arg(0)
-	runner, err := newBluetoothRunner(*noSudo)
+	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
@@ -246,6 +253,8 @@ func connectDevice(args []string) {
 func disconnectDevice(args []string) {
 	flagSet := flag.NewFlagSet("devices disconnect", flag.ExitOnError)
 	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	adapter := flagSet.String("adapter", "", "Adapter identifier (ID, address, or alias) to target")
+	configPath := flagSet.String("config", "", "Path to configuration file (defaults to XDG config directory)")
 	if err := flagSet.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
 		os.Exit(2)
@@ -257,7 +266,7 @@ func disconnectDevice(args []string) {
 	}
 
 	address := flagSet.Arg(0)
-	runner, err := newBluetoothRunner(*noSudo)
+	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
@@ -274,12 +283,48 @@ func disconnectDevice(args []string) {
 	}
 }
 
-func newBluetoothRunner(disableSudo bool) (*bluetoothctl.Runner, error) {
+func newBluetoothRunner(disableSudo bool, adapterOverride, configPath string) (*bluetoothctl.Runner, error) {
 	var opts []bluetoothctl.RunnerOption
 	if disableSudo {
 		opts = append(opts, bluetoothctl.WithUseSudo(false))
 	}
+
+	adapter, err := determineAdapter(context.Background(), adapterOverride, configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: unable to auto-select adapter: %v\n", err)
+	} else if adapter != "" {
+		opts = append(opts, bluetoothctl.WithAdapter(adapter))
+	}
+
 	return bluetoothctl.NewRunner(opts...)
+}
+
+func determineAdapter(ctx context.Context, override, configPath string) (string, error) {
+	if strings.TrimSpace(override) != "" {
+		return override, nil
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return "", fmt.Errorf("load config: %w", err)
+	}
+
+	provider := daemon.DefaultAdapterProvider()
+	adapters, err := provider.ListAdapters(ctx)
+	if err != nil {
+		return "", fmt.Errorf("discover adapters: %w", err)
+	}
+
+	if len(adapters) == 0 {
+		return "", errors.New("no adapters detected")
+	}
+
+	selected, err := daemon.SelectAdapter(cfg.Daemon.PreferredAdapter, adapters)
+	if err != nil {
+		return "", err
+	}
+
+	return selected.ID, nil
 }
 
 func handleDeviceCommandError(operation string, err error) {

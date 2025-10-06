@@ -28,6 +28,11 @@ type Runner struct {
 	// UseSudo indicates whether commands should be executed through sudo.
 	UseSudo bool
 
+	// Adapter identifies the adapter bluetoothctl commands should target when
+	// multiple controllers are present. Leave empty to defer to bluetoothctl's
+	// default selection.
+	Adapter string
+
 	useSudoSet bool
 	sudoSet    bool
 
@@ -57,6 +62,13 @@ func WithUseSudo(use bool) RunnerOption {
 	return func(r *Runner) {
 		r.UseSudo = use
 		r.useSudoSet = true
+	}
+}
+
+// WithAdapter configures the adapter bluetoothctl commands should target.
+func WithAdapter(adapter string) RunnerOption {
+	return func(r *Runner) {
+		r.Adapter = strings.TrimSpace(adapter)
 	}
 }
 
@@ -182,12 +194,18 @@ func (r *Runner) exec(ctx context.Context, args ...string) (string, error) {
 
 	var name string
 	var finalArgs []string
+
+	if r.Adapter != "" {
+		finalArgs = append(finalArgs, "--adapter", r.Adapter)
+	}
+
+	finalArgs = append(finalArgs, args...)
 	if r.UseSudo {
 		name = r.SudoPath
-		finalArgs = append([]string{r.Binary}, args...)
+		finalArgs = append([]string{r.Binary}, finalArgs...)
 	} else {
 		name = r.Binary
-		finalArgs = args
+		// finalArgs already contains the command arguments.
 	}
 
 	out, err := r.run(ctx, name, finalArgs...)

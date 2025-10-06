@@ -17,6 +17,15 @@ func TestSysfsAdapterProviderListsAdapters(t *testing.T) {
 		t.Fatalf("failed to create adapter dir: %v", err)
 	}
 
+	deviceDir := filepath.Join(adapterDir, "device")
+	if err := os.Mkdir(deviceDir, 0o755); err != nil {
+		t.Fatalf("failed to create device dir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(deviceDir, "modalias"), []byte("usb:1234\n"), 0o644); err != nil {
+		t.Fatalf("failed to write modalias: %v", err)
+	}
+
 	if err := os.WriteFile(filepath.Join(adapterDir, "address"), []byte("AA:BB:CC:DD:EE:FF\n"), 0o644); err != nil {
 		t.Fatalf("failed to write address: %v", err)
 	}
@@ -55,6 +64,10 @@ func TestSysfsAdapterProviderListsAdapters(t *testing.T) {
 	if !adapter.Powered {
 		t.Errorf("expected adapter to be powered")
 	}
+
+	if adapter.Transport != AdapterTransportUSB {
+		t.Errorf("expected usb transport, got %s", adapter.Transport)
+	}
 }
 
 func TestSysfsAdapterProviderHandlesMissingFiles(t *testing.T) {
@@ -90,6 +103,10 @@ func TestSysfsAdapterProviderHandlesMissingFiles(t *testing.T) {
 
 	if adapter.Powered {
 		t.Errorf("expected adapter to be unpowered by default")
+	}
+
+	if adapter.Transport != AdapterTransportUnknown {
+		t.Errorf("expected unknown transport, got %s", adapter.Transport)
 	}
 }
 
