@@ -141,20 +141,19 @@ func (r *Runner) Scan(ctx context.Context, duration time.Duration) (string, erro
 		secs = 1
 	}
 
-	args := []string{"--timeout", fmt.Sprintf("%d", secs)}
-
-	if r.Adapter != "" {
-		args = append(args, "select", r.Adapter)
+	adapterOutput, err := r.selectAdapter(ctx)
+	if err != nil {
+		return "", fmt.Errorf("select adapter %s: %w", r.Adapter, err)
 	}
 
-	args = append(args, "scan", "on")
+	args := []string{"--timeout", fmt.Sprintf("%d", secs), "scan", "on"}
 
 	output, err := r.exec(ctx, args...)
 	if err != nil {
 		return "", err
 	}
 
-	return strings.TrimSpace(output), nil
+	return combineOutputs(adapterOutput, output), nil
 }
 
 // Pair attempts to pair with the provided device address and returns the raw
@@ -185,19 +184,17 @@ func (r *Runner) simpleDeviceCommand(ctx context.Context, command, address strin
 		return "", fmt.Errorf("device address required for %s", command)
 	}
 
-	args := make([]string, 0, 4)
-
-	if r.Adapter != "" {
-		args = append(args, "select", r.Adapter)
+	adapterOutput, err := r.selectAdapter(ctx)
+	if err != nil {
+		return "", fmt.Errorf("select adapter %s: %w", r.Adapter, err)
 	}
 
-	args = append(args, command, addr)
-	output, err := r.exec(ctx, args...)
+	output, err := r.exec(ctx, command, addr)
 	if err != nil {
 		return "", err
 	}
 
-	return strings.TrimSpace(output), nil
+	return combineOutputs(adapterOutput, output), nil
 }
 
 func (r *Runner) exec(ctx context.Context, args ...string) (string, error) {
@@ -227,7 +224,37 @@ func (r *Runner) exec(ctx context.Context, args ...string) (string, error) {
 
 func defaultCommandRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = os.Stdin
 	return cmd.CombinedOutput()
+}
+
+func (r *Runner) selectAdapter(ctx context.Context) (string, error) {
+	if ctx == nil {
+		return "", errors.New("nil context passed to selectAdapter")
+	}
+
+	if r.Adapter == "" {
+		return "", nil
+	}
+
+	output, err := r.exec(ctx, "select", r.Adapter)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(output), nil
+}
+
+func combineOutputs(outputs ...string) string {
+	var parts []string
+	for _, output := range outputs {
+		trimmed := strings.TrimSpace(output)
+		if trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+
+	return strings.Join(parts, "\n")
 }
 
 // CommandError captures failures when invoking bluetoothctl. Callers can inspect

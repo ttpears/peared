@@ -82,35 +82,59 @@ func TestRunnerPairReturnsCommandErrorOnFailure(t *testing.T) {
 
 func TestRunnerSimpleCommandSelectsAdapter(t *testing.T) {
 	ctx := context.Background()
-	var gotArgs []string
+	type call struct {
+		name string
+		args []string
+	}
+
+	var calls []call
 	runner, err := NewRunner(
 		WithBinary("bluetoothctl"),
 		WithUseSudo(false),
 		WithAdapter("hci0"),
 		WithCommandRunner(func(_ context.Context, name string, args ...string) ([]byte, error) {
-			if name != "bluetoothctl" {
-				t.Fatalf("unexpected executable %q", name)
+			argsCopy := append([]string(nil), args...)
+			calls = append(calls, call{name: name, args: argsCopy})
+			if len(calls) == 1 {
+				return []byte("Controller selected\n"), nil
 			}
-			gotArgs = append([]string(nil), args...)
-			return []byte("Device AABBCC paired"), nil
+			return []byte("Device AABBCC paired\n"), nil
 		}),
 	)
 	if err != nil {
 		t.Fatalf("NewRunner returned error: %v", err)
 	}
 
-	if _, err := runner.Pair(ctx, "AA:BB:CC:DD:EE:FF"); err != nil {
+	out, err := runner.Pair(ctx, "AA:BB:CC:DD:EE:FF")
+	if err != nil {
 		t.Fatalf("Pair returned error: %v", err)
 	}
 
-	want := []string{"select", "hci0", "pair", "AA:BB:CC:DD:EE:FF"}
-	if len(gotArgs) != len(want) {
-		t.Fatalf("expected %d arguments, got %d: %v", len(want), len(gotArgs), gotArgs)
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 bluetoothctl invocations, got %d", len(calls))
 	}
-	for i := range want {
-		if gotArgs[i] != want[i] {
-			t.Fatalf("argument %d mismatch: want %q got %q (full args: %v)", i, want[i], gotArgs[i], gotArgs)
-		}
+
+	first := calls[0]
+	if first.name != "bluetoothctl" {
+		t.Fatalf("unexpected executable for first call: %q", first.name)
+	}
+	wantFirst := []string{"select", "hci0"}
+	if !slicesEqual(first.args, wantFirst) {
+		t.Fatalf("unexpected arguments for select call: want %v got %v", wantFirst, first.args)
+	}
+
+	second := calls[1]
+	if second.name != "bluetoothctl" {
+		t.Fatalf("unexpected executable for second call: %q", second.name)
+	}
+	wantSecond := []string{"pair", "AA:BB:CC:DD:EE:FF"}
+	if !slicesEqual(second.args, wantSecond) {
+		t.Fatalf("unexpected arguments for pair call: want %v got %v", wantSecond, second.args)
+	}
+
+	wantOutput := "Controller selected\nDevice AABBCC paired"
+	if out != wantOutput {
+		t.Fatalf("unexpected combined output: want %q got %q", wantOutput, out)
 	}
 }
 
@@ -201,34 +225,70 @@ func TestNewRunnerRequiresSudoWhenNonRoot(t *testing.T) {
 
 func TestRunnerExecSelectsAdapterBeforeCommands(t *testing.T) {
 	ctx := context.Background()
-	var gotArgs []string
+	type call struct {
+		name string
+		args []string
+	}
+
+	var calls []call
 	runner, err := NewRunner(
 		WithBinary("bluetoothctl"),
 		WithUseSudo(false),
 		WithAdapter("hci1"),
 		WithCommandRunner(func(_ context.Context, name string, args ...string) ([]byte, error) {
-			gotArgs = append([]string(nil), args...)
-			if name != "bluetoothctl" {
-				t.Fatalf("unexpected executable %q", name)
+			argsCopy := append([]string(nil), args...)
+			calls = append(calls, call{name: name, args: argsCopy})
+			if len(calls) == 1 {
+				return []byte("Selected controller hci1\n"), nil
 			}
-			return []byte("ok"), nil
+			return []byte("scan output\n"), nil
 		}),
 	)
 	if err != nil {
 		t.Fatalf("NewRunner returned error: %v", err)
 	}
 
-	if _, err := runner.Scan(ctx, time.Second); err != nil {
+	out, err := runner.Scan(ctx, time.Second)
+	if err != nil {
 		t.Fatalf("Scan returned error: %v", err)
 	}
 
-	want := []string{"--timeout", "1", "select", "hci1", "scan", "on"}
-	if len(gotArgs) != len(want) {
-		t.Fatalf("expected %d arguments, got %d: %v", len(want), len(gotArgs), gotArgs)
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 bluetoothctl invocations, got %d", len(calls))
 	}
-	for i := range want {
-		if gotArgs[i] != want[i] {
-			t.Fatalf("argument %d mismatch: want %q got %q (full args: %v)", i, want[i], gotArgs[i], gotArgs)
+
+	first := calls[0]
+	wantFirst := []string{"select", "hci1"}
+	if first.name != "bluetoothctl" {
+		t.Fatalf("unexpected executable for select call: %q", first.name)
+	}
+	if !slicesEqual(first.args, wantFirst) {
+		t.Fatalf("unexpected arguments for select call: want %v got %v", wantFirst, first.args)
+	}
+
+	second := calls[1]
+	wantSecond := []string{"--timeout", "1", "scan", "on"}
+	if second.name != "bluetoothctl" {
+		t.Fatalf("unexpected executable for scan call: %q", second.name)
+	}
+	if !slicesEqual(second.args, wantSecond) {
+		t.Fatalf("unexpected arguments for scan call: want %v got %v", wantSecond, second.args)
+	}
+
+	wantOutput := "Selected controller hci1\nscan output"
+	if out != wantOutput {
+		t.Fatalf("unexpected combined output: want %q got %q", wantOutput, out)
+	}
+}
+
+func slicesEqual[T comparable](a, b []T) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
 		}
 	}
+	return true
 }
