@@ -33,7 +33,7 @@ and run a minimal build/test loop without touching production systems.
 maintaining device connectivity across restarts or system hiccups.
 
 **Deliverables**
-- [ ] Implement adapter discovery and selection across multiple controllers,
+- [x] Implement adapter discovery and selection across multiple controllers,
       exposing the active adapter through the daemon API.
 - [ ] Surface radio block state (via BlueZ or rfkill) with clear error messaging
       and controlled unblocking, including audit logs of unblock attempts.
