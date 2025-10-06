@@ -16,14 +16,20 @@ management features. Refer to the [architecture](docs/ARCHITECTURE.md) and
 ```bash
 go test ./...
 go run ./cmd/pearedd --log-level debug
+go run ./cmd/pearedd --config /path/to/config.yaml
 go run ./cmd/peared shell
 ```
 
 The daemon exits when it receives `SIGINT`/`SIGTERM` or when the provided
-context is cancelled. The companion CLI now ships with an early interactive
-shell so you can validate that the binary launches and cleanly exits on your
-workstation. Type `help` inside the shell to see the available commands and use
-`exit` when you're finished testing.
+context is cancelled. It now consumes configuration from the standard XDG
+location (`$XDG_CONFIG_HOME/peared/config.yaml`) or a path supplied via
+`--config`. The companion CLI ships with an early interactive shell so you can
+validate that the binary launches and cleanly exits on your workstation. Type
+`help` inside the shell to see the available commands and use `exit` when you're
+finished testing.
+
+Copy `config/examples/minimal.yaml` into your configuration directory to get
+started with placeholder values for preferred adapters.
 
 ### Arch Linux packaging
 

@@ -1,0 +1,9 @@
+# Example Peared configuration with placeholder values.
+# Copy this file to $XDG_CONFIG_HOME/peared/config.yaml and edit as needed.
+
+daemon:
+  # Choose a preferred adapter to prioritize when multiple controllers are present.
+  # Replace the placeholder with an adapter address or alias returned by bluetoothctl.
+  preferred_adapter: "AA:BB:CC:DD:EE:FF"
+
+# Future sections (devices, automation, audio, etc.) will be added as the roadmap progresses.
