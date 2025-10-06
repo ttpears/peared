@@ -45,21 +45,26 @@ type Daemon struct {
 
 // New constructs a Daemon from the provided options.
 func New(opts Options) (*Daemon, error) {
-	logger := opts.Logger
-	if logger == nil {
-		logger = slog.Default()
-		if logger == nil {
-			logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-		}
-	}
+        logger := opts.Logger
+        if logger == nil {
+                logger = slog.Default()
+                if logger == nil {
+                        logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+                }
+        }
 
-	return &Daemon{
-		preferredAdapter: opts.PreferredAdapter,
-		log:              logger,
-		configSource:     opts.ConfigSource,
-		configLoaded:     opts.ConfigLoaded,
-		adapterProv:      opts.AdapterProvider,
-	}, nil
+        provider := opts.AdapterProvider
+        if provider == nil {
+                provider = DefaultAdapterProvider()
+        }
+
+        return &Daemon{
+                preferredAdapter: opts.PreferredAdapter,
+                log:              logger,
+                configSource:     opts.ConfigSource,
+                configLoaded:     opts.ConfigLoaded,
+                adapterProv:      provider,
+        }, nil
 }
 
 // Run starts the daemon loop and blocks until the context is cancelled or an
