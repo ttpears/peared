@@ -79,7 +79,8 @@ func TestRunNilContext(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if err := d.Run(nil); err == nil {
+	var nilCtx context.Context
+	if err := d.Run(nilCtx); err == nil {
 		t.Fatalf("expected error when context is nil")
 	}
 }

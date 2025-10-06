@@ -103,7 +103,8 @@ func TestRunnerDisconnectNilContext(t *testing.T) {
 		t.Fatalf("NewRunner returned error: %v", err)
 	}
 
-	if _, err := runner.Disconnect(nil, "AA:BB"); err == nil {
+	var nilCtx context.Context
+	if _, err := runner.Disconnect(nilCtx, "AA:BB"); err == nil {
 		t.Fatalf("expected error for nil context")
 	}
 }
