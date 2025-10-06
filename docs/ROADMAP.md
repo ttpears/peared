@@ -33,8 +33,9 @@ and run a minimal build/test loop without touching production systems.
 maintaining device connectivity across restarts or system hiccups.
 
 **Deliverables**
-- [x] Implement adapter discovery and selection across multiple controllers,
-      exposing the active adapter through the daemon API.
+- [ ] Implement adapter discovery and selection across multiple controllers,
+      exposing the active adapter through the daemon API and bluetoothctl
+      wrappers.
 - [ ] Surface radio block state (via BlueZ or rfkill) with clear error messaging
       and controlled unblocking, including audit logs of unblock attempts.
 - [ ] Provide reset workflows for bluetoothd (systemd), kernel modules, and
@@ -58,6 +59,8 @@ and surface state changes in a desktop environment.
 **Deliverables**
 - [ ] Deliver a CLI client for the daemon (connect, disconnect, scan, status,
       reset, forget) with contextual help output.
+- [ ] Surface progress feedback while device discovery is running so the CLI is
+      not silent during long scans.
 - [ ] Integrate desktop notifications via D-Bus (e.g., `notify-send`) with
       user-configurable verbosity levels.
 - [ ] Ship optional status bar outputs compatible with Waybar, Polybar, and
