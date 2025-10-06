@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -167,13 +168,49 @@ func scanDevices(args []string) {
 		os.Exit(2)
 	}
 
-	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
+	runner, selectedAdapter, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
 	}
 
-	output, err := runner.Scan(context.Background(), *duration)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	adapterDescription := "the default adapter"
+	if selectedAdapter != "" {
+		adapterDescription = fmt.Sprintf("adapter %s", selectedAdapter)
+	}
+
+	fmt.Fprintf(os.Stderr, "Scanning for devices using %s for up to %s...\n", adapterDescription, formatDuration(*duration))
+	fmt.Fprintf(os.Stderr, "Press Ctrl+C to cancel.\n")
+	fmt.Fprintf(os.Stderr, "Progress: ")
+
+	start := time.Now()
+	progressDone := make(chan struct{})
+	var progressWG sync.WaitGroup
+	progressWG.Add(1)
+	go func() {
+		defer progressWG.Done()
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-progressDone:
+				return
+			case <-ticker.C:
+				fmt.Fprint(os.Stderr, ".")
+			}
+		}
+	}()
+
+	output, err := runner.Scan(ctx, *duration)
+	close(progressDone)
+	progressWG.Wait()
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "Scan finished after %s.\n", time.Since(start).Round(time.Second))
+
 	if err != nil {
 		handleDeviceCommandError("scan", err)
 		os.Exit(1)
@@ -200,7 +237,7 @@ func pairDevice(args []string) {
 	}
 
 	address := flagSet.Arg(0)
-	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
+	runner, _, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
@@ -233,7 +270,7 @@ func connectDevice(args []string) {
 	}
 
 	address := flagSet.Arg(0)
-	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
+	runner, _, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
@@ -266,7 +303,7 @@ func disconnectDevice(args []string) {
 	}
 
 	address := flagSet.Arg(0)
-	runner, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
+	runner, _, err := newBluetoothRunner(*noSudo, *adapter, *configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
 		os.Exit(1)
@@ -283,7 +320,20 @@ func disconnectDevice(args []string) {
 	}
 }
 
-func newBluetoothRunner(disableSudo bool, adapterOverride, configPath string) (*bluetoothctl.Runner, error) {
+func formatDuration(d time.Duration) string {
+	if d <= 0 {
+		return "0s"
+	}
+
+	rounded := d.Round(time.Second)
+	if rounded == 0 {
+		rounded = time.Second
+	}
+
+	return rounded.String()
+}
+
+func newBluetoothRunner(disableSudo bool, adapterOverride, configPath string) (*bluetoothctl.Runner, string, error) {
 	var opts []bluetoothctl.RunnerOption
 	if disableSudo {
 		opts = append(opts, bluetoothctl.WithUseSudo(false))
@@ -291,12 +341,19 @@ func newBluetoothRunner(disableSudo bool, adapterOverride, configPath string) (*
 
 	adapter, err := determineAdapter(context.Background(), adapterOverride, configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: unable to auto-select adapter: %v\n", err)
-	} else if adapter != "" {
+		return nil, "", fmt.Errorf("determine adapter: %w", err)
+	}
+
+	if adapter != "" {
 		opts = append(opts, bluetoothctl.WithAdapter(adapter))
 	}
 
-	return bluetoothctl.NewRunner(opts...)
+	runner, err := bluetoothctl.NewRunner(opts...)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return runner, adapter, nil
 }
 
 func determineAdapter(ctx context.Context, override, configPath string) (string, error) {
