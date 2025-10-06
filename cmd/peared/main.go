@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/peared/peared/internal/cli"
+	"github.com/peared/peared/internal/daemon"
 )
 
 func main() {
@@ -23,6 +24,8 @@ func main() {
 	switch os.Args[1] {
 	case "shell":
 		runShell(os.Args[2:])
+	case "adapters":
+		runAdapters(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -67,8 +70,9 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n")
 	fmt.Fprintf(os.Stderr, "  peared <command> [options]\n\n")
 	fmt.Fprintf(os.Stderr, "Available Commands:\n")
-	fmt.Fprintf(os.Stderr, "  shell   Start an interactive shell session\n")
-	fmt.Fprintf(os.Stderr, "  help    Show this message\n")
+	fmt.Fprintf(os.Stderr, "  adapters  Inspect Bluetooth adapters available on the host\n")
+	fmt.Fprintf(os.Stderr, "  shell     Start an interactive shell session\n")
+	fmt.Fprintf(os.Stderr, "  help      Show this message\n")
 }
 
 func parseLevel(level string) slog.Leveler {
@@ -85,5 +89,66 @@ func parseLevel(level string) slog.Leveler {
 	default:
 		lvl := slog.LevelInfo
 		return lvl
+	}
+}
+
+func runAdapters(args []string) {
+	if len(args) == 0 {
+		adaptersUsage()
+		os.Exit(2)
+	}
+
+	switch args[0] {
+	case "list":
+		listAdapters(args[1:])
+	case "help", "-h", "--help":
+		adaptersUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown adapters command: %s\n\n", args[0])
+		adaptersUsage()
+		os.Exit(2)
+	}
+}
+
+func adaptersUsage() {
+	fmt.Fprintf(os.Stderr, "Usage: peared adapters <command>\n\n")
+	fmt.Fprintf(os.Stderr, "Commands:\n")
+	fmt.Fprintf(os.Stderr, "  list   Discover Bluetooth adapters managed by the host\n")
+}
+
+func listAdapters(args []string) {
+	fs := flag.NewFlagSet("adapters list", flag.ExitOnError)
+	sysfsPath := fs.String("sysfs", "", "Override the sysfs root used to discover adapters (advanced)")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse adapters flags: %v\n", err)
+		os.Exit(2)
+	}
+
+	ctx := context.Background()
+
+	provider := daemon.NewSysfsAdapterProvider(*sysfsPath)
+	adapters, err := provider.ListAdapters(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to list adapters: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(adapters) == 0 {
+		fmt.Fprintf(os.Stdout, "No adapters detected.\n")
+		return
+	}
+
+	for _, adapter := range adapters {
+		powered := "off"
+		if adapter.Powered {
+			powered = "on"
+		}
+
+		alias := adapter.Alias
+		if alias == "" {
+			alias = "(no alias)"
+		}
+
+		fmt.Fprintf(os.Stdout, "%s\t%s\t%s\t%s\n", adapter.ID, adapter.Address, alias, powered)
 	}
 }
