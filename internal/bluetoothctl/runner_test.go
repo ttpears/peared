@@ -80,6 +80,40 @@ func TestRunnerPairReturnsCommandErrorOnFailure(t *testing.T) {
 	}
 }
 
+func TestRunnerSimpleCommandSelectsAdapter(t *testing.T) {
+	ctx := context.Background()
+	var gotArgs []string
+	runner, err := NewRunner(
+		WithBinary("bluetoothctl"),
+		WithUseSudo(false),
+		WithAdapter("hci0"),
+		WithCommandRunner(func(_ context.Context, name string, args ...string) ([]byte, error) {
+			if name != "bluetoothctl" {
+				t.Fatalf("unexpected executable %q", name)
+			}
+			gotArgs = append([]string(nil), args...)
+			return []byte("Device AABBCC paired"), nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewRunner returned error: %v", err)
+	}
+
+	if _, err := runner.Pair(ctx, "AA:BB:CC:DD:EE:FF"); err != nil {
+		t.Fatalf("Pair returned error: %v", err)
+	}
+
+	want := []string{"select", "hci0", "pair", "AA:BB:CC:DD:EE:FF"}
+	if len(gotArgs) != len(want) {
+		t.Fatalf("expected %d arguments, got %d: %v", len(want), len(gotArgs), gotArgs)
+	}
+	for i := range want {
+		if gotArgs[i] != want[i] {
+			t.Fatalf("argument %d mismatch: want %q got %q (full args: %v)", i, want[i], gotArgs[i], gotArgs)
+		}
+	}
+}
+
 func TestRunnerConnectValidatesInput(t *testing.T) {
 	runner, err := NewRunner(
 		WithBinary("bluetoothctl"),
@@ -165,7 +199,7 @@ func TestNewRunnerRequiresSudoWhenNonRoot(t *testing.T) {
 	}
 }
 
-func TestRunnerExecIncludesAdapter(t *testing.T) {
+func TestRunnerExecSelectsAdapterBeforeCommands(t *testing.T) {
 	ctx := context.Background()
 	var gotArgs []string
 	runner, err := NewRunner(
@@ -188,11 +222,13 @@ func TestRunnerExecIncludesAdapter(t *testing.T) {
 		t.Fatalf("Scan returned error: %v", err)
 	}
 
-	if len(gotArgs) < 4 {
-		t.Fatalf("expected adapter flag and scan args, got %v", gotArgs)
+	want := []string{"--timeout", "1", "select", "hci1", "scan", "on"}
+	if len(gotArgs) != len(want) {
+		t.Fatalf("expected %d arguments, got %d: %v", len(want), len(gotArgs), gotArgs)
 	}
-
-	if gotArgs[0] != "--adapter" || gotArgs[1] != "hci1" {
-		t.Fatalf("expected adapter flag first, got %v", gotArgs)
+	for i := range want {
+		if gotArgs[i] != want[i] {
+			t.Fatalf("argument %d mismatch: want %q got %q (full args: %v)", i, want[i], gotArgs[i], gotArgs)
+		}
 	}
 }

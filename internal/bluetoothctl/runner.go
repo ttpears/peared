@@ -141,7 +141,14 @@ func (r *Runner) Scan(ctx context.Context, duration time.Duration) (string, erro
 		secs = 1
 	}
 
-	args := []string{"--timeout", fmt.Sprintf("%d", secs), "scan", "on"}
+	args := []string{"--timeout", fmt.Sprintf("%d", secs)}
+
+	if r.Adapter != "" {
+		args = append(args, "select", r.Adapter)
+	}
+
+	args = append(args, "scan", "on")
+
 	output, err := r.exec(ctx, args...)
 	if err != nil {
 		return "", err
@@ -178,7 +185,13 @@ func (r *Runner) simpleDeviceCommand(ctx context.Context, command, address strin
 		return "", fmt.Errorf("device address required for %s", command)
 	}
 
-	args := []string{command, addr}
+	args := make([]string, 0, 4)
+
+	if r.Adapter != "" {
+		args = append(args, "select", r.Adapter)
+	}
+
+	args = append(args, command, addr)
 	output, err := r.exec(ctx, args...)
 	if err != nil {
 		return "", err
@@ -194,10 +207,6 @@ func (r *Runner) exec(ctx context.Context, args ...string) (string, error) {
 
 	var name string
 	var finalArgs []string
-
-	if r.Adapter != "" {
-		finalArgs = append(finalArgs, "--adapter", r.Adapter)
-	}
 
 	finalArgs = append(finalArgs, args...)
 	if r.UseSudo {
