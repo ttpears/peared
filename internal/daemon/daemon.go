@@ -3,8 +3,10 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 )
 
 // Options configures the behavior of the daemon when constructed.
@@ -12,6 +14,9 @@ type Options struct {
 	// PreferredAdapter is the adapter identifier the daemon should try to use
 	// first. Leaving it empty defers to automatic selection.
 	PreferredAdapter string
+
+	// AdapterProvider discovers adapters present on the system.
+	AdapterProvider AdapterProvider
 
 	// Logger allows callers to provide a slog.Logger configured with project
 	// defaults. A sensible default logger is used when nil.
@@ -32,6 +37,10 @@ type Daemon struct {
 	log              *slog.Logger
 	configSource     string
 	configLoaded     bool
+
+	mu            sync.RWMutex
+	adapterProv   AdapterProvider
+	activeAdapter *Adapter
 }
 
 // New constructs a Daemon from the provided options.
@@ -49,6 +58,7 @@ func New(opts Options) (*Daemon, error) {
 		log:              logger,
 		configSource:     opts.ConfigSource,
 		configLoaded:     opts.ConfigLoaded,
+		adapterProv:      opts.AdapterProvider,
 	}, nil
 }
 
@@ -59,7 +69,21 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return errors.New("nil context passed to Run")
 	}
 
-	d.log.Info("daemon started", "preferred_adapter", d.preferredAdapter, "config_source", d.configSource, "config_loaded", d.configLoaded)
+	if d.adapterProv != nil {
+		if err := d.refreshAdapters(ctx); err != nil {
+			return err
+		}
+	}
+
+	activeAdapter := ""
+	if adapter, ok := d.ActiveAdapter(); ok {
+		activeAdapter = adapter.ID
+		if activeAdapter == "" {
+			activeAdapter = adapter.Address
+		}
+	}
+
+	d.log.Info("daemon started", "preferred_adapter", d.preferredAdapter, "config_source", d.configSource, "config_loaded", d.configLoaded, "active_adapter", activeAdapter)
 	<-ctx.Done()
 
 	if err := context.Cause(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -68,5 +92,57 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	d.log.Info("daemon stopped")
+	return nil
+}
+
+// ActiveAdapter returns the adapter currently selected by the daemon.
+func (d *Daemon) ActiveAdapter() (Adapter, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if d.activeAdapter == nil {
+		return Adapter{}, false
+	}
+
+	adapter := *d.activeAdapter
+	return adapter, true
+}
+
+func (d *Daemon) refreshAdapters(ctx context.Context) error {
+	if d.adapterProv == nil {
+		return errors.New("adapter provider not configured")
+	}
+
+	adapters, err := d.adapterProv.ListAdapters(ctx)
+	if err != nil {
+		return fmt.Errorf("list adapters: %w", err)
+	}
+
+	if len(adapters) == 0 {
+		return errors.New("no adapters discovered")
+	}
+
+	var chosen Adapter
+	if d.preferredAdapter != "" {
+		for _, adapter := range adapters {
+			if adapter.Matches(d.preferredAdapter) {
+				chosen = adapter
+				goto setAdapter
+			}
+		}
+	}
+
+	chosen = adapters[0]
+
+setAdapter:
+	d.mu.Lock()
+	d.activeAdapter = &Adapter{
+		ID:      chosen.ID,
+		Address: chosen.Address,
+		Alias:   chosen.Alias,
+		Powered: chosen.Powered,
+	}
+	d.mu.Unlock()
+
 	return nil
 }
