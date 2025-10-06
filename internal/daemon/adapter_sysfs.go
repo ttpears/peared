@@ -77,16 +77,49 @@ func (p *sysfsAdapterProvider) ListAdapters(ctx context.Context) ([]Adapter, err
 		address := readTrimmedFile(filepath.Join(adapterPath, "address"))
 		alias := readTrimmedFile(filepath.Join(adapterPath, "name"))
 		powered := parseBool(readTrimmedFile(filepath.Join(adapterPath, "powered")))
+		transport := detectTransport(adapterPath)
 
 		adapters = append(adapters, Adapter{
-			ID:      name,
-			Address: address,
-			Alias:   alias,
-			Powered: powered,
+			ID:        name,
+			Address:   address,
+			Alias:     alias,
+			Powered:   powered,
+			Transport: transport,
 		})
 	}
 
 	return adapters, nil
+}
+
+func detectTransport(adapterPath string) AdapterTransport {
+	modalias := readTrimmedFile(filepath.Join(adapterPath, "device", "modalias"))
+	if modalias != "" {
+		lower := strings.ToLower(modalias)
+		switch {
+		case strings.HasPrefix(lower, "usb:"):
+			return AdapterTransportUSB
+		case strings.HasPrefix(lower, "pci:"):
+			return AdapterTransportPCI
+		case strings.HasPrefix(lower, "acpi:") || strings.HasPrefix(lower, "platform:"):
+			return AdapterTransportPlatform
+		}
+	}
+
+	devicePath := filepath.Join(adapterPath, "device")
+	target, err := filepath.EvalSymlinks(devicePath)
+	if err == nil {
+		t := strings.ToLower(target)
+		switch {
+		case strings.Contains(t, "/usb"):
+			return AdapterTransportUSB
+		case strings.Contains(t, "/pci"):
+			return AdapterTransportPCI
+		case strings.Contains(t, "/platform") || strings.Contains(t, "/acpi"):
+			return AdapterTransportPlatform
+		}
+	}
+
+	return AdapterTransportUnknown
 }
 
 func readTrimmedFile(path string) string {

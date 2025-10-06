@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -21,7 +22,24 @@ type Adapter struct {
 
 	// Powered indicates whether the adapter radio is currently powered on.
 	Powered bool
+
+	// Transport attempts to describe the bus used by the adapter (usb, pci,
+	// platform, etc.). Selection logic can prefer specific transports when a
+	// preferred adapter is not explicitly configured.
+	Transport AdapterTransport
 }
+
+// AdapterTransport identifies the bus type used by an adapter. Values are best
+// effort because sysfs metadata is not always present or consistent across
+// kernels.
+type AdapterTransport string
+
+const (
+	AdapterTransportUnknown  AdapterTransport = "unknown"
+	AdapterTransportUSB      AdapterTransport = "usb"
+	AdapterTransportPCI      AdapterTransport = "pci"
+	AdapterTransportPlatform AdapterTransport = "platform"
+)
 
 // Matches returns true when the adapter corresponds to the provided identifier.
 // It performs case-insensitive comparisons across the adapter's ID, address,
@@ -45,6 +63,32 @@ func (a Adapter) Matches(identifier string) bool {
 	}
 
 	return false
+}
+
+// SelectAdapter chooses the most appropriate adapter from the supplied list.
+// A preferred adapter identifier is honoured when provided; otherwise adapters
+// attached via USB are prioritised. If no USB adapter is present, the first
+// entry is returned.
+func SelectAdapter(preferred string, adapters []Adapter) (Adapter, error) {
+	if len(adapters) == 0 {
+		return Adapter{}, fmt.Errorf("select adapter: no adapters supplied")
+	}
+
+	if preferred = strings.TrimSpace(preferred); preferred != "" {
+		for _, adapter := range adapters {
+			if adapter.Matches(preferred) {
+				return adapter, nil
+			}
+		}
+	}
+
+	for _, adapter := range adapters {
+		if adapter.Transport == AdapterTransportUSB {
+			return adapter, nil
+		}
+	}
+
+	return adapters[0], nil
 }
 
 // AdapterProvider knows how to discover adapters that are currently available
