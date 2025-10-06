@@ -16,9 +16,9 @@ and run a minimal build/test loop without touching production systems.
       guidelines) with clear setup instructions for Arch and Debian developers.
 - [ ] Establish Go module layout and CI scaffolding (linting, unit tests, and
       static analysis gates).
-- [ ] Provide configuration templates with placeholder addresses and adapter IDs
+- [x] Provide configuration templates with placeholder addresses and adapter IDs
       stored under `config/examples/`.
-- [ ] Adopt the GPL-3.0 license and document contributor guidance, including the
+- [x] Adopt the GPL-3.0 license and document contributor guidance, including the
       Developer Certificate of Origin (DCO) process.
 
 **Success Criteria**

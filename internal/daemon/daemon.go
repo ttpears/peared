@@ -16,6 +16,13 @@ type Options struct {
 	// Logger allows callers to provide a slog.Logger configured with project
 	// defaults. A sensible default logger is used when nil.
 	Logger *slog.Logger
+
+	// ConfigSource is the path used to load configuration. It is surfaced in logs
+	// to help troubleshoot configuration resolution.
+	ConfigSource string
+
+	// ConfigLoaded indicates whether a configuration file was found on disk.
+	ConfigLoaded bool
 }
 
 // Daemon represents the long-running coordination process that will manage
@@ -23,6 +30,8 @@ type Options struct {
 type Daemon struct {
 	preferredAdapter string
 	log              *slog.Logger
+	configSource     string
+	configLoaded     bool
 }
 
 // New constructs a Daemon from the provided options.
@@ -38,6 +47,8 @@ func New(opts Options) (*Daemon, error) {
 	return &Daemon{
 		preferredAdapter: opts.PreferredAdapter,
 		log:              logger,
+		configSource:     opts.ConfigSource,
+		configLoaded:     opts.ConfigLoaded,
 	}, nil
 }
 
@@ -48,7 +59,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return errors.New("nil context passed to Run")
 	}
 
-	d.log.Info("daemon started", "preferred_adapter", d.preferredAdapter)
+	d.log.Info("daemon started", "preferred_adapter", d.preferredAdapter, "config_source", d.configSource, "config_loaded", d.configLoaded)
 	<-ctx.Done()
 
 	if err := context.Cause(ctx); err != nil && !errors.Is(err, context.Canceled) {
