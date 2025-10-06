@@ -11,7 +11,9 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/peared/peared/internal/bluetoothctl"
 	"github.com/peared/peared/internal/cli"
 	"github.com/peared/peared/internal/daemon"
 )
@@ -27,6 +29,8 @@ func main() {
 		runShell(os.Args[2:])
 	case "adapters":
 		runAdapters(os.Args[2:])
+	case "devices":
+		runDevices(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -72,6 +76,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "  peared <command> [options]\n\n")
 	fmt.Fprintf(os.Stderr, "Available Commands:\n")
 	fmt.Fprintf(os.Stderr, "  adapters  Inspect Bluetooth adapters available on the host\n")
+	fmt.Fprintf(os.Stderr, "  devices   Manage Bluetooth devices (scan, pair, connect, disconnect)\n")
 	fmt.Fprintf(os.Stderr, "  shell     Start an interactive shell session\n")
 	fmt.Fprintf(os.Stderr, "  help      Show this message\n")
 }
@@ -115,6 +120,177 @@ func adaptersUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: peared adapters <command>\n\n")
 	fmt.Fprintf(os.Stderr, "Commands:\n")
 	fmt.Fprintf(os.Stderr, "  list   Discover Bluetooth adapters managed by the host\n")
+}
+
+func runDevices(args []string) {
+	if len(args) == 0 {
+		devicesUsage()
+		os.Exit(2)
+	}
+
+	switch args[0] {
+	case "scan":
+		scanDevices(args[1:])
+	case "pair":
+		pairDevice(args[1:])
+	case "connect":
+		connectDevice(args[1:])
+	case "disconnect":
+		disconnectDevice(args[1:])
+	case "help", "-h", "--help":
+		devicesUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown devices command: %s\n\n", args[0])
+		devicesUsage()
+		os.Exit(2)
+	}
+}
+
+func devicesUsage() {
+	fmt.Fprintf(os.Stderr, "Usage: peared devices <command> [options]\n\n")
+	fmt.Fprintf(os.Stderr, "Commands:\n")
+	fmt.Fprintf(os.Stderr, "  scan         Discover nearby devices using bluetoothctl\n")
+	fmt.Fprintf(os.Stderr, "  pair <addr>  Pair with the specified device\n")
+	fmt.Fprintf(os.Stderr, "  connect <addr>   Connect to the specified device\n")
+	fmt.Fprintf(os.Stderr, "  disconnect <addr> Disconnect the specified device\n")
+}
+
+func scanDevices(args []string) {
+	flagSet := flag.NewFlagSet("devices scan", flag.ExitOnError)
+	duration := flagSet.Duration("duration", 15*time.Second, "Duration to scan for devices")
+	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	if err := flagSet.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
+		os.Exit(2)
+	}
+
+	runner, err := newBluetoothRunner(*noSudo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
+		os.Exit(1)
+	}
+
+	output, err := runner.Scan(context.Background(), *duration)
+	if err != nil {
+		handleDeviceCommandError("scan", err)
+		os.Exit(1)
+	}
+
+	if output != "" {
+		fmt.Fprintf(os.Stdout, "%s\n", output)
+	}
+}
+
+func pairDevice(args []string) {
+	flagSet := flag.NewFlagSet("devices pair", flag.ExitOnError)
+	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	if err := flagSet.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
+		os.Exit(2)
+	}
+
+	if flagSet.NArg() != 1 {
+		fmt.Fprintf(os.Stderr, "pair requires a device address\n")
+		os.Exit(2)
+	}
+
+	address := flagSet.Arg(0)
+	runner, err := newBluetoothRunner(*noSudo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
+		os.Exit(1)
+	}
+
+	output, err := runner.Pair(context.Background(), address)
+	if err != nil {
+		handleDeviceCommandError(fmt.Sprintf("pair %s", address), err)
+		os.Exit(1)
+	}
+
+	if output != "" {
+		fmt.Fprintf(os.Stdout, "%s\n", output)
+	}
+}
+
+func connectDevice(args []string) {
+	flagSet := flag.NewFlagSet("devices connect", flag.ExitOnError)
+	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	if err := flagSet.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
+		os.Exit(2)
+	}
+
+	if flagSet.NArg() != 1 {
+		fmt.Fprintf(os.Stderr, "connect requires a device address\n")
+		os.Exit(2)
+	}
+
+	address := flagSet.Arg(0)
+	runner, err := newBluetoothRunner(*noSudo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
+		os.Exit(1)
+	}
+
+	output, err := runner.Connect(context.Background(), address)
+	if err != nil {
+		handleDeviceCommandError(fmt.Sprintf("connect %s", address), err)
+		os.Exit(1)
+	}
+
+	if output != "" {
+		fmt.Fprintf(os.Stdout, "%s\n", output)
+	}
+}
+
+func disconnectDevice(args []string) {
+	flagSet := flag.NewFlagSet("devices disconnect", flag.ExitOnError)
+	noSudo := flagSet.Bool("no-sudo", false, "Disable automatic sudo escalation (advanced)")
+	if err := flagSet.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse devices flags: %v\n", err)
+		os.Exit(2)
+	}
+
+	if flagSet.NArg() != 1 {
+		fmt.Fprintf(os.Stderr, "disconnect requires a device address\n")
+		os.Exit(2)
+	}
+
+	address := flagSet.Arg(0)
+	runner, err := newBluetoothRunner(*noSudo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to set up bluetoothctl runner: %v\n", err)
+		os.Exit(1)
+	}
+
+	output, err := runner.Disconnect(context.Background(), address)
+	if err != nil {
+		handleDeviceCommandError(fmt.Sprintf("disconnect %s", address), err)
+		os.Exit(1)
+	}
+
+	if output != "" {
+		fmt.Fprintf(os.Stdout, "%s\n", output)
+	}
+}
+
+func newBluetoothRunner(disableSudo bool) (*bluetoothctl.Runner, error) {
+	var opts []bluetoothctl.RunnerOption
+	if disableSudo {
+		opts = append(opts, bluetoothctl.WithUseSudo(false))
+	}
+	return bluetoothctl.NewRunner(opts...)
+}
+
+func handleDeviceCommandError(operation string, err error) {
+	var cmdErr *bluetoothctl.CommandError
+	if errors.As(err, &cmdErr) {
+		trimmed := strings.TrimSpace(cmdErr.Output)
+		if trimmed != "" {
+			fmt.Fprintf(os.Stderr, "%s\n", trimmed)
+		}
+	}
+	fmt.Fprintf(os.Stderr, "failed to execute %s: %v\n", operation, err)
 }
 
 func listAdapters(args []string) {

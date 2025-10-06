@@ -20,6 +20,8 @@ go run ./cmd/pearedd --log-level debug
 go run ./cmd/pearedd --config /path/to/config.yaml
 go run ./cmd/peared shell
 go run ./cmd/peared adapters list
+go run ./cmd/peared devices scan
+go run ./cmd/peared devices pair AA:BB:CC:DD:EE:FF
 ```
 
 The daemon exits when it receives `SIGINT`/`SIGTERM` or when the provided
@@ -37,6 +39,13 @@ sysfs hierarchy usually works without additional setup, but some distributions
 restrict access to `/sys/class/bluetooth`. If you encounter a permission error,
 run the command with elevated privileges or add your user to the `bluetooth`
 group so discovery can proceed.
+
+The new `peared devices` commands wrap `bluetoothctl` to scan, pair, connect,
+and disconnect hardware without dropping into the interactive shell. These
+operations often require elevated permissions; the CLI automatically attempts
+to escalate via `sudo` when not executed as root. Ensure your user can run
+`sudo bluetoothctl` or invoke the command as root if pairing fails with a
+permission error.
 
 Copy `config/examples/minimal.yaml` into your configuration directory to get
 started. You can optionally set `preferred_adapter` in the file using the values
