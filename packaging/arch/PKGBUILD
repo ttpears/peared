@@ -1,0 +1,45 @@
+# Maintainer: Peared Developers <dev@peared.sh>
+
+pkgname=peared-git
+pkgver=0
+pkgrel=1
+pkgdesc="Bluetooth management toolkit daemon and CLI"
+arch=('x86_64' 'aarch64')
+url="https://github.com/peared/peared"
+license=('GPL3')
+depends=('bluez' 'dbus')
+makedepends=('go' 'git')
+provides=('peared')
+conflicts=('peared')
+source=("git+https://github.com/peared/peared.git")
+sha256sums=('SKIP')
+
+pkgver() {
+        cd "${srcdir}/peared"
+        printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+        cd "${srcdir}/peared"
+        git submodule update --init
+}
+
+build() {
+        cd "${srcdir}/peared"
+        export CGO_ENABLED=0
+        go build -o build/pearedd ./cmd/pearedd
+        go build -o build/peared ./cmd/peared
+}
+
+check() {
+        cd "${srcdir}/peared"
+        go test ./...
+}
+
+package() {
+        cd "${srcdir}/peared"
+        install -Dm755 build/pearedd "${pkgdir}/usr/bin/pearedd"
+        install -Dm755 build/peared "${pkgdir}/usr/bin/peared"
+        install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+        install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}
