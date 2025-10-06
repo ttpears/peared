@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -174,7 +177,16 @@ func scanDevices(args []string) {
 		os.Exit(1)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	scanDuration := *duration
+	if scanDuration <= 0 {
+		scanDuration = 15 * time.Second
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, scanDuration+5*time.Second)
 	defer cancel()
 
 	adapterDescription := "the default adapter"
@@ -182,7 +194,7 @@ func scanDevices(args []string) {
 		adapterDescription = fmt.Sprintf("adapter %s", selectedAdapter)
 	}
 
-	fmt.Fprintf(os.Stderr, "Scanning for devices using %s for up to %s...\n", adapterDescription, formatDuration(*duration))
+	fmt.Fprintf(os.Stderr, "Scanning for devices using %s for up to %s...\n", adapterDescription, formatDuration(scanDuration))
 	fmt.Fprintf(os.Stderr, "Press Ctrl+C to cancel.\n")
 	fmt.Fprintf(os.Stderr, "Progress: ")
 
@@ -205,7 +217,7 @@ func scanDevices(args []string) {
 		}
 	}()
 
-	output, err := runner.Scan(ctx, *duration)
+	output, err := runner.Scan(ctx, scanDuration)
 	close(progressDone)
 	progressWG.Wait()
 	fmt.Fprintln(os.Stderr)
@@ -381,7 +393,109 @@ func determineAdapter(ctx context.Context, override, configPath string) (string,
 		return "", err
 	}
 
-	return selected.ID, nil
+	if len(adapters) <= 1 {
+		return selected.ID, nil
+	}
+
+	if !isInteractive(os.Stdin) {
+		fmt.Fprintf(os.Stderr, "Multiple adapters detected. Defaulting to %s. Use --adapter to override.\n", selected.ID)
+		return selected.ID, nil
+	}
+
+	chosen, err := promptAdapterSelection(os.Stdin, os.Stderr, adapters, selected.ID)
+	if err != nil {
+		return "", err
+	}
+
+	return chosen, nil
+}
+
+func promptAdapterSelection(in io.Reader, out io.Writer, adapters []daemon.Adapter, defaultID string) (string, error) {
+	if len(adapters) == 0 {
+		return "", errors.New("no adapters available for selection")
+	}
+
+	reader := bufio.NewReader(in)
+
+	fmt.Fprintln(out, "Multiple Bluetooth adapters detected. Please choose one:")
+	for i, adapter := range adapters {
+		index := i + 1
+		marker := " "
+		if adapter.ID == defaultID {
+			marker = "*"
+		}
+
+		alias := adapter.Alias
+		if strings.TrimSpace(alias) == "" {
+			alias = "(no alias)"
+		}
+
+		address := adapter.Address
+		if strings.TrimSpace(address) == "" {
+			address = "(no address)"
+		}
+
+		powered := "off"
+		if adapter.Powered {
+			powered = "on"
+		}
+
+		transport := string(adapter.Transport)
+		if transport == "" {
+			transport = "unknown"
+		}
+
+		fmt.Fprintf(out, "  %d%s %s\t%s\t%s\t%s\n", index, marker, adapter.ID, alias, address, transport)
+		fmt.Fprintf(out, "       powered: %s\n", powered)
+	}
+
+	if defaultID != "" {
+		fmt.Fprintf(out, "Press Enter to use the default adapter (%s).\n", defaultID)
+	}
+
+	for {
+		fmt.Fprintf(out, "Enter adapter number [1-%d]: ", len(adapters))
+		input, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", fmt.Errorf("read adapter selection: %w", err)
+		}
+
+		choice := strings.TrimSpace(input)
+
+		if choice == "" {
+			if defaultID != "" {
+				fmt.Fprintf(out, "Using default adapter %s.\n", defaultID)
+				return defaultID, nil
+			}
+			return adapters[0].ID, nil
+		}
+
+		index, convErr := strconv.Atoi(choice)
+		if convErr != nil || index < 1 || index > len(adapters) {
+			if errors.Is(err, io.EOF) {
+				return "", fmt.Errorf("invalid adapter selection")
+			}
+			fmt.Fprintf(out, "Invalid selection. Please enter a number between 1 and %d or press Enter for the default.\n", len(adapters))
+			continue
+		}
+
+		selected := adapters[index-1].ID
+		fmt.Fprintf(out, "Using adapter %s.\n", selected)
+		return selected, nil
+	}
+}
+
+func isInteractive(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func handleDeviceCommandError(operation string, err error) {
