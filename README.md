@@ -14,6 +14,10 @@ scaffolding required for future Bluetooth management features. Refer to the
 [architecture](docs/ARCHITECTURE.md) and [roadmap](docs/ROADMAP.md) documents
 for the broader implementation plan.
 
+For a source-level account of the adapter-selection fixes and the gap between a
+portable Go binary and a supported Linux application, see
+[The Go Binary Was Portable. The Bluetooth Stack Wasn’t.](https://hackyourworld.com/the-distribution-is-part-of-the-constraint/)
+
 ```bash
 go test ./...
 go run ./cmd/pearedd --log-level debug
